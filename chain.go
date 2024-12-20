@@ -15,13 +15,13 @@ type Transaction struct {
 }
 
 type Block struct {
-	currentBlockHash  string
-	prevBlockHash     string
-	timestamp         int64
-	nonce             int
-	merkleroot        string
-	BlockTransactions []Transaction
-	next              *Block
+	CurrentBlockHash  string        `json:"currentBlockHash"`
+	PrevBlockHash     string        `json:"prevBlockHash"`
+	Timestamp         int64         `json:"timestamp"`
+	Nonce             int           `json:"nonce"`
+	MerkleRoot        string        `json:"merkleroot"`
+	BlockTransactions []Transaction `json:"blockTransactions"`
+	Next              *Block        `json:"next,omitempty"`
 }
 
 type BlockChain struct {
@@ -38,8 +38,8 @@ type MerkleNode struct {
 func (obj *BlockChain) displayBlockChain() {
 	currentNode := obj.head
 	for currentNode != nil {
-		fmt.Printf("Block Hash: %s\n", currentNode.currentBlockHash)
-		currentNode = currentNode.next
+		fmt.Printf("Block Hash: %s\n", currentNode.CurrentBlockHash)
+		currentNode = currentNode.Next
 	}
 }
 
@@ -49,17 +49,17 @@ func (obj *BlockChain) addBlock(b *Block) {
 		obj.head = b
 	} else {
 		currentNode := obj.head
-		for currentNode.next != nil {
-			currentNode = currentNode.next
+		for currentNode.Next != nil {
+			currentNode = currentNode.Next
 		}
-		currentNode.next = b
+		currentNode.Next = b
 	}
 }
 
 // Calculating the hash of current Block
 func (block1 *Block) blockHashCalculation() string {
 	//Block header consist of prevBlockhash,nonce,timestamp,merkleroot and trasactions in that block
-	blockHeader := fmt.Sprintf("%s%d%d%s%s", block1.prevBlockHash, block1.timestamp, block1.nonce, block1.merkleroot, block1.BlockTransactions)
+	blockHeader := fmt.Sprintf("%s%d%d%s%s", block1.PrevBlockHash, block1.Timestamp, block1.Nonce, block1.MerkleRoot, block1.BlockTransactions)
 	hash_value := sha256.Sum256([]byte(blockHeader))
 	hash_string := hex.EncodeToString(hash_value[:])
 	return hash_string
@@ -68,14 +68,14 @@ func (block1 *Block) blockHashCalculation() string {
 // Creation of new Block
 func blockCreation(prevBlockHash string, trasactions []Transaction) *Block {
 	block := &Block{
-		prevBlockHash:     prevBlockHash,
-		timestamp:         time.Now().Unix(),
-		nonce:             0,
+		PrevBlockHash:     prevBlockHash,
+		Timestamp:         time.Now().Unix(),
+		Nonce:             0,
 		BlockTransactions: trasactions,
-		next:              nil,
+		Next:              nil,
 	}
 
-	block.merkleroot = merkleRoot(trasactions).hash
+	block.MerkleRoot = merkleRoot(trasactions).hash
 	mined := block.mineBlock()
 	if mined {
 		return block
@@ -89,36 +89,36 @@ func blockCreation(prevBlockHash string, trasactions []Transaction) *Block {
 func (b *Block) mineBlock() bool {
 	targetPrefix := strings.Repeat("0", _MINING_DIFFICULTY_)
 	for {
-		b.currentBlockHash = b.blockHashCalculation()
-		currentPrefix := b.currentBlockHash[:_MINING_DIFFICULTY_]
-		//print this after every 500 iterations
-		if b.nonce%500 == 0 {
-			fmt.Printf("Current Hash: %s, Current Prefix: %s, Target Prefix: %s\n", b.currentBlockHash, currentPrefix, targetPrefix)
+		b.CurrentBlockHash = b.blockHashCalculation()
+		currentPrefix := b.CurrentBlockHash[:_MINING_DIFFICULTY_]
+		//print this after every 2000 iterations
+		if b.Nonce%3000 == 0 {
+			fmt.Printf("Current Hash: %s, Current Prefix: %s, Target Prefix: %s\n", b.CurrentBlockHash, currentPrefix, targetPrefix)
 		}
 		if currentPrefix == targetPrefix {
-			fmt.Println("Block Mined:", b.currentBlockHash)
+			fmt.Println("Block Mined:", b.CurrentBlockHash)
 			return true
 		}
-		b.nonce++
+		b.Nonce++
 	}
 }
 
 // Checking the validity of block along with chain
 func (obj *BlockChain) validityCheck() bool {
 	currentNode := obj.head
-	for currentNode != nil && currentNode.next != nil {
+	for currentNode != nil && currentNode.Next != nil {
 		currentBlock := currentNode
-		nextBlock := currentNode.next
+		nextBlock := currentNode.Next
 
-		if currentBlock.currentBlockHash != nextBlock.prevBlockHash {
+		if currentBlock.CurrentBlockHash != nextBlock.PrevBlockHash {
 			return false
 		}
 
-		if currentBlock.currentBlockHash != currentBlock.blockHashCalculation() && nextBlock.currentBlockHash != nextBlock.blockHashCalculation() {
+		if currentBlock.CurrentBlockHash != currentBlock.blockHashCalculation() && nextBlock.CurrentBlockHash != nextBlock.blockHashCalculation() {
 			return false
 		}
 
-		currentNode = currentNode.next
+		currentNode = currentNode.Next
 	}
 	return true
 }
@@ -126,8 +126,8 @@ func (obj *BlockChain) validityCheck() bool {
 // Changing the block
 func changeBlock(b *Block, transactions []Transaction) {
 	b.BlockTransactions = transactions
-	b.merkleroot = merkleRoot(transactions).hash
-	b.currentBlockHash = b.blockHashCalculation()
+	b.MerkleRoot = merkleRoot(transactions).hash
+	b.CurrentBlockHash = b.blockHashCalculation()
 }
 
 // Displaying Block
@@ -139,11 +139,11 @@ func (b *Block) String() string {
 		"|  Nonce:               %d\n"+
 		"|  Merkle Root:         %s\n"+
 		"|  Transactions:        %v\n",
-		b.prevBlockHash,
-		b.currentBlockHash,
-		time.Unix(b.timestamp, 0).Format("2006-01-02 15:04:05"),
-		b.nonce,
-		b.merkleroot,
+		b.PrevBlockHash,
+		b.CurrentBlockHash,
+		time.Unix(b.Timestamp, 0).Format("2006-01-02 15:04:05"),
+		b.Nonce,
+		b.MerkleRoot,
 		b.BlockTransactions,
 	)
 }

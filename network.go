@@ -1,26 +1,25 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
-	"regexp"
-	"strconv"
 	"sync"
 	"time"
 )
 
 // Node represents a peer in the P2P network
 type Node struct {
-	ID            int
-	Port          int
-	IP            string
-	Neighbors     []string
-	CurrentBlock  Block
-	ReceivedBlock Block
-	mu            sync.Mutex
+	ID                   int
+	Port                 int
+	IP                   string
+	Neighbors            []string
+	CurrentBlock         Block
+	ReceivedBlock        Block
+	mu                   sync.Mutex
+	receivedTransactions map[string]bool
+	receivedBlocks       map[string]bool
 }
 
 // BootstrapNode represents the bootstrap node
@@ -50,31 +49,41 @@ func RegisterNode(node *Node) {
 }
 
 func assigningNeighbor(node *Node) {
-	// Connect with a random subset of existing nodes
+	BootstrapNode.mu.Lock()
 	existingNodes := append([]string{}, BootstrapNode.Neighbors...)
+	BootstrapNode.mu.Unlock()
+
+	if len(existingNodes) == 0 {
+		fmt.Printf("Node %d: No neighbors available to assign.\n", node.ID)
+		return
+	}
+
 	rand.Shuffle(len(existingNodes), func(i, j int) {
 		existingNodes[i], existingNodes[j] = existingNodes[j], existingNodes[i]
 	})
 
-	maxNeighbors := 5 // You can adjust the number of neighbors as needed
+	maxNeighbors := 5
+	neighborSet := make(map[string]bool)
 	for _, potentialNeighbor := range existingNodes {
-		if potentialNeighbor != node.IP {
+		if potentialNeighbor != fmt.Sprintf("%s:%d", node.IP, node.Port) && !neighborSet[potentialNeighbor] {
 			node.Neighbors = append(node.Neighbors, potentialNeighbor)
+			neighborSet[potentialNeighbor] = true
 			maxNeighbors--
 		}
-
 		if maxNeighbors == 0 {
 			break
 		}
 	}
+
+	fmt.Printf("Node %d assigned neighbors: %v\n", node.ID, node.Neighbors)
 }
 
 // StartNode starts a new node as both a server and a client
 func StartNode(node *Node) {
 	node.CurrentBlock = Block{
-		prevBlockHash: blockchain.head.currentBlockHash,
-		timestamp:     time.Now().Unix(),
-		nonce:         0,
+		PrevBlockHash: blockchain.head.CurrentBlockHash,
+		Timestamp:     time.Now().Unix(),
+		Nonce:         0,
 	}
 	go node.startServer()
 	go node.startClient()
@@ -102,104 +111,116 @@ func (node *Node) startServer() {
 }
 
 func (node *Node) handleTranscation(trx []Transaction) {
+	floodArr := []Transaction{}
+	node.mu.Lock()
+	defer node.mu.Unlock()
 
-	flood_arr := []Transaction{}
-	for _, upcoming_trx := range trx {
-		check := false
-		for _, exisiting_trx := range node.CurrentBlock.BlockTransactions {
-			if exisiting_trx.Data == upcoming_trx.Data {
-				check = true
-				return
+	for _, upcomingTrx := range trx {
+		if _, exists := node.receivedTransactions[upcomingTrx.Data]; !exists {
+			// Check if the transaction already exists in the CurrentBlock
+			duplicate := false
+			for _, existingTrx := range node.CurrentBlock.BlockTransactions {
+				if existingTrx.Data == upcomingTrx.Data {
+					duplicate = true
+					break
+				}
+			}
+
+			if !duplicate {
+				node.receivedTransactions[upcomingTrx.Data] = true
+				floodArr = append(floodArr, upcomingTrx)
+				node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, upcomingTrx)
 			}
 		}
-		if !check {
-			flood_arr = append(flood_arr, upcoming_trx)
-		}
 	}
-	node.floodingTrx(flood_arr)
 
+	if len(floodArr) > 0 {
+		node.floodingTrx(floodArr)
+	}
+
+	if len(node.CurrentBlock.BlockTransactions) >= 4 {
+		node.mineCheck()
+	}
 }
 
 func (node *Node) mineCheck() {
 	if len(node.CurrentBlock.BlockTransactions) >= 4 {
+		fmt.Printf("Node %d: Starting to mine block with transactions: %+v\n", node.ID, node.CurrentBlock.BlockTransactions)
 		node.CurrentBlock.mineBlock()
-		if node.ReceivedBlock.prevBlockHash == "" {
-			fmt.Println("Node ", node.ID, " is the first node to brodcast")
-			node.floodingBlock(node.CurrentBlock)
+		fmt.Printf("Node %d mined a block: %+v\n", node.ID, node.CurrentBlock)
+
+		node.floodingBlock(node.CurrentBlock)
+		// Reset the current block
+		node.CurrentBlock = Block{
+			PrevBlockHash:     node.CurrentBlock.CurrentBlockHash,
+			Timestamp:         time.Now().Unix(),
+			BlockTransactions: []Transaction{},
+			Nonce:             0,
 		}
 	}
-	node.CurrentBlock = Block{}
+}
+
+func (bc *BlockChain) containsBlock(hash string) bool {
+	current := bc.head
+	for current != nil {
+		if current.CurrentBlockHash == hash {
+			return true
+		}
+		current = current.Next
+	}
+	return false
 }
 
 func (node *Node) handleBlock(block Block) {
-	if block.prevBlockHash != node.ReceivedBlock.prevBlockHash {
-		node.ReceivedBlock = block
-		if node.ReceivedBlock.currentBlockHash == node.ReceivedBlock.blockHashCalculation() {
-			fmt.Println("Block is valid")
-			node.floodingBlock(node.ReceivedBlock)
-		} else {
-			fmt.Println("Block is invalid : ", node.ReceivedBlock.currentBlockHash, " | ", node.ReceivedBlock.blockHashCalculation())
-		}
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	if _, exists := node.receivedBlocks[block.CurrentBlockHash]; exists {
+		fmt.Printf("Node %d: Block already received, skipping.\n", node.ID)
+		return
 	}
-	node.ReceivedBlock = Block{}
+
+	// Validate block
+	if block.CurrentBlockHash == block.blockHashCalculation() {
+		fmt.Printf("Node %d: Valid block received. Adding to blockchain.\n", node.ID)
+		node.receivedBlocks[block.CurrentBlockHash] = true
+		blockchain.addBlock(&block)
+		node.floodingBlock(block)
+	} else {
+		fmt.Printf("Node %d: Invalid block received. Hash mismatch.\n", node.ID)
+	}
 }
 
 // handling the transaction receiveing from the client
 func (node *Node) handleClient(conn net.Conn) {
 	defer conn.Close()
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		data := scanner.Text()
-		//fmt.Printf("Node %d: Received data from neighbor: %s\n", node.ID, data)
-		var receivedTransactions []Transaction
-		if err := json.Unmarshal([]byte(data), &receivedTransactions); err == nil {
-			node.handleTranscation(receivedTransactions)
-			continue
-		} else {
-			re := regexp.MustCompile(`\{([^ ]+) ([^ ]+) %!s\(int64=([0-9]+)\) %!s\(int=([0-9]+)\) ([^ ]+) \[([^\]]+)\]\}`)
+	decoder := json.NewDecoder(conn)
 
-			// Find matches in the input string
-			matches := re.FindStringSubmatch(data)
-			if matches == nil || len(matches) != 7 {
-				//sreturn nil, fmt.Errorf("invalid input format")
-			}
-
-			// Extract values from matches
-			currentBlockHash := matches[1]
-			prevBlockHash := matches[2]
-			timestamp, _ := strconv.ParseInt(matches[3], 10, 64)
-			nonce, _ := strconv.Atoi(matches[4])
-			merkleRoot := matches[5]
-			transactionsStr := matches[6]
-
-			re1 := regexp.MustCompile(`\{([^}]+)\}`)
-
-			// Find matches in the transactions string
-			matches1 := re1.FindAllStringSubmatch(transactionsStr, -1)
-			if matches1 == nil {
-			}
-
-			// Extract values from matches
-			var extractedTransactions []Transaction
-			for _, match := range matches1 {
-				extractedTransactions = append(extractedTransactions, Transaction{Data: match[1]})
-			}
-			// Create and return the Block structure
-			block := &Block{
-				currentBlockHash:  currentBlockHash,
-				prevBlockHash:     prevBlockHash,
-				timestamp:         timestamp,
-				nonce:             nonce,
-				merkleroot:        merkleRoot,
-				BlockTransactions: extractedTransactions,
-			}
-
-			//fmt.Println("received block: ", block)
-			node.handleBlock(*block)
-
-		}
-
+	// Read the raw JSON message
+	var rawMessage json.RawMessage
+	if err := decoder.Decode(&rawMessage); err != nil {
+		fmt.Printf("Node %d: Error reading data from neighbor: %v\n", node.ID, err)
+		return
 	}
+
+	// Try decoding as a Block
+	var block Block
+	if err := json.Unmarshal(rawMessage, &block); err == nil {
+		fmt.Printf("Node %d: Received block: %+v\n", node.ID, block)
+		node.handleBlock(block)
+		return
+	}
+
+	// Try decoding as a list of Transactions
+	var transactions []Transaction
+	if err := json.Unmarshal(rawMessage, &transactions); err == nil {
+		fmt.Printf("Node %d: Received transactions: %+v\n", node.ID, transactions)
+		node.handleTranscation(transactions)
+		return
+	}
+
+	// Log the failure to interpret the data
+	fmt.Printf("Node %d: Failed to decode received data\n", node.ID)
 }
 
 // startClient simulates the client functionality by periodically contacting neighbors
@@ -223,37 +244,50 @@ func (node *Node) contactNeighbor(neighbor string) {
 func (node *Node) floodingTrx(transactions []Transaction) {
 	node.mu.Lock()
 	defer node.mu.Unlock()
+
+	if len(node.Neighbors) == 0 {
+		fmt.Printf("Node %d: No neighbors to broadcast to.\n", node.ID)
+		return
+	}
+
 	node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, transactions...)
 
 	for _, neighbor := range node.Neighbors {
 		go node.brodcastingTrxToNeigborNodes(neighbor, node.CurrentBlock.BlockTransactions)
 	}
-	node.CurrentBlock.merkleroot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
+	node.CurrentBlock.MerkleRoot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
 }
 
 func (node *Node) floodingBlock(block Block) {
 	node.mu.Lock()
-	defer node.mu.Unlock()
-	node.CurrentBlock = block
-	for _, neighbor := range node.Neighbors {
-		go node.brodcastingBlockToNeighborNodes(neighbor, node.CurrentBlock)
+	if len(node.Neighbors) == 0 {
+		fmt.Printf("Node %d: No neighbors to broadcast to.\n", node.ID)
+		node.mu.Unlock()
+		return
+	}
+	neighborsCopy := append([]string{}, node.Neighbors...)
+	node.mu.Unlock()
+
+	for _, neighbor := range neighborsCopy {
+		go node.brodcastingBlockToNeighborNodes(neighbor, block)
 	}
 }
 
 func (node *Node) brodcastingBlockToNeighborNodes(neighbor string, block Block) {
 	fmt.Printf("Node %d: Broadcasting block to neighbor %s\n", node.ID, neighbor)
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	time.Sleep(1 * time.Second)
 	conn, err := net.Dial("tcp", neighbor)
 	if err != nil {
-		fmt.Printf("Node %d: There was error connecting to neighbor: %v\n", node.ID, err)
+		fmt.Printf("Node %d: Error connecting to neighbor %s: %v\n", node.ID, neighbor, err)
 		return
 	}
 	defer conn.Close()
 
-	fmt.Fprintf(conn, "%s\n", block)
-
+	// Serialize the block as JSON
+	encoder := json.NewEncoder(conn)
+	if err := encoder.Encode(block); err != nil {
+		fmt.Printf("Node %d: Error encoding block to neighbor %s: %v\n", node.ID, neighbor, err)
+		return
+	}
 }
 
 func (node *Node) brodcastingTrxToNeigborNodes(neighbor string, transactions []Transaction) {
@@ -331,7 +365,7 @@ func part01() {
 
 	prevBlockHash := ""
 	block1 := blockCreation(prevBlockHash, transactions1)
-	block2 := blockCreation(block1.currentBlockHash, transactions2)
+	block2 := blockCreation(block1.CurrentBlockHash, transactions2)
 	fmt.Println(block1)
 	fmt.Println(block2)
 
@@ -361,17 +395,93 @@ func part01() {
 	displayMerkleTree(merkleRoot(block1.BlockTransactions), "")
 }
 
+// func part02() {
+// 	var wg sync.WaitGroup
+
+// 	// Define the number of transactions to generate
+// 	totalTransactions := 100
+
+// 	// Genesis block creation
+// 	genesisBlock := Block{
+// 		PrevBlockHash:     "",
+// 		Timestamp:         time.Now().Unix(),
+// 		Nonce:             0,
+// 		MerkleRoot:        "",
+// 		BlockTransactions: []Transaction{},
+// 	}
+
+// 	genesisBlock.CurrentBlockHash = genesisBlock.blockHashCalculation()
+// 	blockchain.addBlock(&genesisBlock)
+
+// 	// Create nodes
+// 	nodes := make([]Node, 8)
+
+// 	for i := range nodes {
+// 		nodes[i].IP = "127.0.0.1"
+// 		nodes[i].receivedTransactions = make(map[string]bool)
+// 		nodes[i].receivedBlocks = make(map[string]bool)
+// 		RegisterNode(&nodes[i])
+// 	}
+
+// 	for i := range nodes {
+// 		assigningNeighbor(&nodes[i])
+// 		StartNode(&nodes[i])
+// 	}
+
+// 	// Start the transaction generator with WaitGroup
+// 	wg.Add(1)
+// 	go func() {
+// 		defer wg.Done()
+// 		generateTransactions(nodes, totalTransactions)
+// 	}()
+
+// 	// Allow the network to operate and wait for goroutines
+// 	time.Sleep(12 * time.Second)
+
+// 	// Display the P2P network state
+// 	DisplayP2PNetwork(nodes)
+
+// 	// Wait for all goroutines to finish
+// 	wg.Wait()
+
+// 	fmt.Println("All work is done. Exiting program.")
+// }
+
+// // Function to generate a specific number of transactions
+// func generateTransactions(nodes []Node, totalTransactions int) {
+// 	batchSize := 5 // Number of transactions in each batch
+// 	transactionCount := 0
+
+// 	for transactionCount < totalTransactions {
+// 		var batch []Transaction
+// 		for i := 0; i < batchSize && transactionCount < totalTransactions; i++ {
+// 			transaction := Transaction{Data: fmt.Sprintf("%dUSD Sent", rand.Intn(10000))}
+// 			batch = append(batch, transaction)
+// 			transactionCount++
+// 		}
+// 		fmt.Printf("Generated transactions batch: %v\n", batch)
+
+// 		// Select a random node to initiate the broadcast
+// 		randomNode := nodes[rand.Intn(len(nodes))]
+// 		randomNode.floodingTrx(batch)
+
+// 		time.Sleep(500 * time.Millisecond) // Delay between batches
+// 	}
+
+// 	fmt.Println("All transactions generated.")
+// }
+
 func part02() {
 
 	genesisBlock := Block{
-		prevBlockHash:     "",
-		timestamp:         time.Now().Unix(),
-		nonce:             0,
-		merkleroot:        "",
+		PrevBlockHash:     "",
+		Timestamp:         time.Now().Unix(),
+		Nonce:             0,
+		MerkleRoot:        "",
 		BlockTransactions: []Transaction{},
 	}
 
-	genesisBlock.currentBlockHash = genesisBlock.blockHashCalculation()
+	genesisBlock.CurrentBlockHash = genesisBlock.blockHashCalculation()
 	blockchain.addBlock(&genesisBlock)
 
 	transactions := []Transaction{
@@ -384,8 +494,11 @@ func part02() {
 
 	for i := range nodes {
 		nodes[i].IP = "127.0.0.1"
+		nodes[i].receivedTransactions = make(map[string]bool)
+		nodes[i].receivedBlocks = make(map[string]bool)
 		RegisterNode(&nodes[i])
 	}
+
 	for i := range nodes {
 		assigningNeighbor(&nodes[i])
 		StartNode(&nodes[i])
