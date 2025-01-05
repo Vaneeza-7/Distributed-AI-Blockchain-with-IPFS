@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const _MINING_DIFFICULTY_ = 5
+const _MINING_DIFFICULTY_ = 3
 
 type Transaction struct {
 	Data string

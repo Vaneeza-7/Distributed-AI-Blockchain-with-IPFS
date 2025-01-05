@@ -31,6 +31,8 @@ var BootstrapNode = Node{
 
 var nodeIDCounter = 1
 var portCounter = 6000
+var minedTransactions = make(map[string]bool)
+var minedMu sync.Mutex
 
 // RegisterNode registers a new node with the bootstrap node
 func RegisterNode(node *Node) {
@@ -116,8 +118,17 @@ func (node *Node) handleTranscation(trx []Transaction) {
 	defer node.mu.Unlock()
 
 	for _, upcomingTrx := range trx {
-		if _, exists := node.receivedTransactions[upcomingTrx.Data]; !exists {
-			// Check if the transaction already exists in the CurrentBlock
+		// Add all transactions to the flood array for broadcasting
+		floodArr = append(floodArr, upcomingTrx)
+
+		// Check if the transaction has already been mined
+		minedMu.Lock()
+		_, isMined := minedTransactions[upcomingTrx.Data]
+		minedMu.Unlock()
+
+		// Add transaction to the current block only if it is unmined
+		if !isMined && !node.receivedTransactions[upcomingTrx.Data] {
+			// Check if the transaction is a duplicate in the CurrentBlock
 			duplicate := false
 			for _, existingTrx := range node.CurrentBlock.BlockTransactions {
 				if existingTrx.Data == upcomingTrx.Data {
@@ -126,30 +137,44 @@ func (node *Node) handleTranscation(trx []Transaction) {
 				}
 			}
 
-			if !duplicate {
+			// Add the transaction if it's not a duplicate and the block isn't full
+			if !duplicate && len(node.CurrentBlock.BlockTransactions) < 5 {
 				node.receivedTransactions[upcomingTrx.Data] = true
-				floodArr = append(floodArr, upcomingTrx)
 				node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, upcomingTrx)
 			}
 		}
 	}
 
+	// Flood all received transactions (both mined and unmined)
 	if len(floodArr) > 0 {
 		node.floodingTrx(floodArr)
 	}
 
-	if len(node.CurrentBlock.BlockTransactions) >= 4 {
+	// Mine the block if it has exactly 5 transactions
+	if len(node.CurrentBlock.BlockTransactions) == 5 {
 		node.mineCheck()
 	}
 }
 
 func (node *Node) mineCheck() {
-	if len(node.CurrentBlock.BlockTransactions) >= 4 {
+	// Ensure block is ready for mining
+	if len(node.CurrentBlock.BlockTransactions) == 5 {
 		fmt.Printf("Node %d: Starting to mine block with transactions: %+v\n", node.ID, node.CurrentBlock.BlockTransactions)
-		node.CurrentBlock.mineBlock()
-		fmt.Printf("Node %d mined a block: %+v\n", node.ID, node.CurrentBlock)
 
+		// Mine the block
+		node.CurrentBlock.mineBlock()
+
+		// Broadcast the mined block
+		fmt.Printf("Node %d mined a block: %+v\n", node.ID, node.CurrentBlock)
 		node.floodingBlock(node.CurrentBlock)
+
+		// Mark transactions as mined globally
+		minedMu.Lock()
+		for _, trx := range node.CurrentBlock.BlockTransactions {
+			minedTransactions[trx.Data] = true
+		}
+		minedMu.Unlock()
+
 		// Reset the current block
 		node.CurrentBlock = Block{
 			PrevBlockHash:     node.CurrentBlock.CurrentBlockHash,
@@ -172,23 +197,50 @@ func (bc *BlockChain) containsBlock(hash string) bool {
 }
 
 func (node *Node) handleBlock(block Block) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
+	fmt.Printf("Node %d: +++++++++++++++++++++++Handling block++++++++++++++++ %+v\n", node.ID, block)
+
+	//node.mu.Lock()
+	// defer node.mu.Unlock()
 
 	if _, exists := node.receivedBlocks[block.CurrentBlockHash]; exists {
 		fmt.Printf("Node %d: Block already received, skipping.\n", node.ID)
+		//node.mu.Unlock()
 		return
 	}
 
-	// Validate block
+	if condition := blockchain.containsBlock(block.CurrentBlockHash); condition {
+		fmt.Printf("Node %d: Block already in blockchain, skipping.\n", node.ID)
+		return
+	}
+
+	//node.receivedBlocks[block.CurrentBlockHash] = true
+	//node.mu.Unlock()
+
 	if block.CurrentBlockHash == block.blockHashCalculation() {
-		fmt.Printf("Node %d: Valid block received. Adding to blockchain.\n", node.ID)
 		node.receivedBlocks[block.CurrentBlockHash] = true
 		blockchain.addBlock(&block)
+		fmt.Printf("Node %d: Block added to blockchain.\n", node.ID)
 		node.floodingBlock(block)
+		minedMu.Lock()
+		for _, trx := range block.BlockTransactions {
+			minedTransactions[trx.Data] = true
+		}
+		minedMu.Unlock()
+
+		//node.mu.Lock()
+		unminedTransactions := []Transaction{}
+		for _, trx := range node.CurrentBlock.BlockTransactions {
+			if !minedTransactions[trx.Data] {
+				unminedTransactions = append(unminedTransactions, trx)
+			}
+		}
+		node.CurrentBlock.BlockTransactions = unminedTransactions
+		//node.mu.Unlock()
 	} else {
 		fmt.Printf("Node %d: Invalid block received. Hash mismatch.\n", node.ID)
 	}
+
+	fmt.Printf("Node %d: Block handling complete.\n", node.ID)
 }
 
 // handling the transaction receiveing from the client
@@ -250,12 +302,22 @@ func (node *Node) floodingTrx(transactions []Transaction) {
 		return
 	}
 
-	node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, transactions...)
-
-	for _, neighbor := range node.Neighbors {
-		go node.brodcastingTrxToNeigborNodes(neighbor, node.CurrentBlock.BlockTransactions)
+	// Add only the first 5 transactions to the current block
+	for _, trx := range transactions {
+		if len(node.CurrentBlock.BlockTransactions) < 5 {
+			node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, trx)
+		}
 	}
-	node.CurrentBlock.MerkleRoot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
+
+	// Update MerkleRoot for the block based on the first 5 transactions
+	if len(node.CurrentBlock.BlockTransactions) > 0 {
+		node.CurrentBlock.MerkleRoot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
+	}
+
+	// Broadcast all received transactions, not just the first 5
+	for _, neighbor := range node.Neighbors {
+		go node.brodcastingTrxToNeigborNodes(neighbor, transactions)
+	}
 }
 
 func (node *Node) floodingBlock(block Block) {
@@ -489,6 +551,12 @@ func part02() {
 		{Data: "1600USD Sent"},
 		{Data: "1700USD Sent"},
 		{Data: "1800USD Sent"},
+		{Data: "1900USD Sent"},
+		{Data: "2000USD Sent"},
+		{Data: "2100USD Sent"},
+		{Data: "2200USD Sent"},
+		{Data: "2300USD Sent"},
+		{Data: "2400USD Sent"},
 	}
 	nodes := make([]Node, 8)
 
@@ -507,6 +575,13 @@ func part02() {
 
 	time.Sleep(12 * time.Second)
 	DisplayP2PNetwork(nodes)
+
+	fmt.Println("*****BLOCK CHAIN*****")
+	blockchain.displayBlockChain()
+	//print the block in blockchain
+	for current := blockchain.head; current != nil; current = current.Next {
+		fmt.Println(current)
+	}
 
 	select {}
 }
