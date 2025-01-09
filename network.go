@@ -141,6 +141,14 @@ func (node *Node) handleTranscation(trx []Transaction) {
 			if !duplicate && len(node.CurrentBlock.BlockTransactions) < 5 {
 				node.receivedTransactions[upcomingTrx.Data] = true
 				node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, upcomingTrx)
+				fmt.Printf("Node %d: Added transaction to current block: %+v\n", node.ID, upcomingTrx)
+
+				//as soon as length of block transaction is 5, we will start mining the block
+				if len(node.CurrentBlock.BlockTransactions) == 5 {
+					// Update MerkleRoot for the block based on the first 5 transactions
+					node.CurrentBlock.MerkleRoot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
+					go node.mineCheck()
+				}
 			}
 		}
 	}
@@ -151,38 +159,78 @@ func (node *Node) handleTranscation(trx []Transaction) {
 	}
 
 	// Mine the block if it has exactly 5 transactions
-	if len(node.CurrentBlock.BlockTransactions) == 5 {
-		node.mineCheck()
-	}
+	// if len(node.CurrentBlock.BlockTransactions) == 5 {
+	// 	node.mineCheck()
+	// }
 }
 
+// func (node *Node) mineCheck() {
+
+// 	//node.mu.Lock()
+// 	//defer node.mu.Unlock()
+
+// 	// Ensure block is ready for mining
+// 	if len(node.CurrentBlock.BlockTransactions) == 5 {
+// 		fmt.Printf("Node %d: Starting to mine block with transactions: %+v\n", node.ID, node.CurrentBlock.BlockTransactions)
+
+// 		// Mine the block
+// 		node.CurrentBlock.mineBlock()
+
+// 		// Broadcast the mined block
+// 		fmt.Printf("Node %d mined a block: %+v\n", node.ID, node.CurrentBlock)
+// 		node.mu.Lock()
+// 		node.floodingBlock(node.CurrentBlock)
+// 		node.mu.Unlock()
+// 		fmt.Printf("Node %d: Vaneeza Mined block broadcasted.\n", node.ID)
+
+// 		// Mark transactions as mined globally
+// 		minedMu.Lock()
+// 		for _, trx := range node.CurrentBlock.BlockTransactions {
+// 			minedTransactions[trx.Data] = true
+// 		}
+// 		minedMu.Unlock()
+
+// 		// Reset the current block
+// 		node.CurrentBlock = Block{
+// 			PrevBlockHash:     node.CurrentBlock.CurrentBlockHash,
+// 			Timestamp:         time.Now().Unix(),
+// 			BlockTransactions: []Transaction{},
+// 			Nonce:             0,
+// 		}
+// 	}
+// }
+
 func (node *Node) mineCheck() {
-	// Ensure block is ready for mining
-	if len(node.CurrentBlock.BlockTransactions) == 5 {
-		fmt.Printf("Node %d: Starting to mine block with transactions: %+v\n", node.ID, node.CurrentBlock.BlockTransactions)
-
-		// Mine the block
-		node.CurrentBlock.mineBlock()
-
-		// Broadcast the mined block
-		fmt.Printf("Node %d mined a block: %+v\n", node.ID, node.CurrentBlock)
-		node.floodingBlock(node.CurrentBlock)
-
-		// Mark transactions as mined globally
-		minedMu.Lock()
-		for _, trx := range node.CurrentBlock.BlockTransactions {
-			minedTransactions[trx.Data] = true
-		}
-		minedMu.Unlock()
-
-		// Reset the current block
-		node.CurrentBlock = Block{
-			PrevBlockHash:     node.CurrentBlock.CurrentBlockHash,
-			Timestamp:         time.Now().Unix(),
-			BlockTransactions: []Transaction{},
-			Nonce:             0,
-		}
+	if len(node.CurrentBlock.BlockTransactions) < 5 {
+		fmt.Printf("Node %d: Not enough transactions to mine a block.\n", node.ID)
+		return
 	}
+	blockToMine := node.CurrentBlock
+
+	// Mine the block
+	fmt.Printf("Node %d: Starting to mine block with transactions: %+v\n", node.ID, blockToMine.BlockTransactions)
+	blockToMine.mineBlock()
+	fmt.Printf("Node %d: Block mined: %+v\n", node.ID, blockToMine)
+
+	// Broadcast the block
+	fmt.Printf("Node %d: Broadcasting mined block.\n", node.ID)
+	node.floodingBlock(blockToMine)
+
+	// Mark transactions as mined globally
+	minedMu.Lock()
+	for _, trx := range blockToMine.BlockTransactions {
+		minedTransactions[trx.Data] = true
+	}
+	minedMu.Unlock()
+
+	node.mu.Lock()
+	node.CurrentBlock = Block{
+		PrevBlockHash:     blockToMine.CurrentBlockHash,
+		Timestamp:         time.Now().Unix(),
+		BlockTransactions: []Transaction{},
+		Nonce:             0,
+	}
+	node.mu.Unlock()
 }
 
 func (bc *BlockChain) containsBlock(hash string) bool {
@@ -321,15 +369,17 @@ func (node *Node) floodingTrx(transactions []Transaction) {
 }
 
 func (node *Node) floodingBlock(block Block) {
-	node.mu.Lock()
+	fmt.Printf("Hello from node %d\n", node.ID)
+	//node.mu.Lock()
 	if len(node.Neighbors) == 0 {
 		fmt.Printf("Node %d: No neighbors to broadcast to.\n", node.ID)
 		node.mu.Unlock()
 		return
 	}
 	neighborsCopy := append([]string{}, node.Neighbors...)
-	node.mu.Unlock()
+	//node.mu.Unlock()
 
+	fmt.Printf("Node %d: Broadcasting block to neighbors: %+v\n", node.ID, neighborsCopy)
 	for _, neighbor := range neighborsCopy {
 		go node.brodcastingBlockToNeighborNodes(neighbor, block)
 	}
@@ -503,10 +553,19 @@ func part01() {
 // 	// Display the P2P network state
 // 	DisplayP2PNetwork(nodes)
 
+// 	fmt.Println("*****BLOCK CHAIN*****")
+// 	blockchain.displayBlockChain()
+// 	//print the block in blockchain
+// 	for current := blockchain.head; current != nil; current = current.Next {
+// 		fmt.Println(current)
+// 	}
+
 // 	// Wait for all goroutines to finish
 // 	wg.Wait()
 
 // 	fmt.Println("All work is done. Exiting program.")
+
+// 	select {}
 // }
 
 // // Function to generate a specific number of transactions
