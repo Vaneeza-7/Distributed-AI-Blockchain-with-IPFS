@@ -438,8 +438,9 @@ func main() {
 	fmt.Println("Select an option:")
 	fmt.Println("1. Part #01")
 	fmt.Println("2. Part #02")
+	fmt.Println("3. Retrieve from IPFS")
 
-	fmt.Print("Enter your choice (1 or 2): ")
+	fmt.Print("Enter your choice (1 or 2 or 3): ")
 	fmt.Scanln(&choice)
 
 	switch choice {
@@ -447,6 +448,8 @@ func main() {
 		part01()
 	case 2:
 		part02()
+	case 3:
+		retrieve_all_files()
 	default:
 		fmt.Println("Invalid choice. Please enter 1 or 2.")
 	}
