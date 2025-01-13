@@ -11,7 +11,9 @@ import (
 const _MINING_DIFFICULTY_ = 3
 
 type Transaction struct {
-	Data string
+	DatasetHash string   `json:"dataset_hash"`
+	AlgoHash    string   `json:"algo_hash"`
+	Output      AIOutput `json:"output"`
 }
 
 type Block struct {
@@ -160,7 +162,7 @@ func merkleRoot(data []Transaction) *MerkleNode {
 	//Calculating the hash of all the data and then appending in nodes of merkle tree it will be leaf nodes
 	var nodes []*MerkleNode
 	for _, val := range data {
-		hash_data := &MerkleNode{hash: hashCalculation(val.Data)}
+		hash_data := &MerkleNode{hash: hashCalculation(val.DatasetHash + val.AlgoHash)}
 		nodes = append(nodes, hash_data)
 	}
 	//if there are more than 1 node than we can create merkle tree

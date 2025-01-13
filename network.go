@@ -123,15 +123,15 @@ func (node *Node) handleTranscation(trx []Transaction) {
 
 		// Check if the transaction has already been mined
 		minedMu.Lock()
-		_, isMined := minedTransactions[upcomingTrx.Data]
+		_, isMined := minedTransactions[upcomingTrx.DatasetHash]
 		minedMu.Unlock()
 
 		// Add transaction to the current block only if it is unmined
-		if !isMined && !node.receivedTransactions[upcomingTrx.Data] {
+		if !isMined && !node.receivedTransactions[upcomingTrx.DatasetHash] {
 			// Check if the transaction is a duplicate in the CurrentBlock
 			duplicate := false
 			for _, existingTrx := range node.CurrentBlock.BlockTransactions {
-				if existingTrx.Data == upcomingTrx.Data {
+				if existingTrx.DatasetHash == upcomingTrx.DatasetHash {
 					duplicate = true
 					break
 				}
@@ -139,7 +139,7 @@ func (node *Node) handleTranscation(trx []Transaction) {
 
 			// Add the transaction if it's not a duplicate and the block isn't full
 			if !duplicate && len(node.CurrentBlock.BlockTransactions) < 5 {
-				node.receivedTransactions[upcomingTrx.Data] = true
+				node.receivedTransactions[upcomingTrx.DatasetHash] = true
 				node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, upcomingTrx)
 				fmt.Printf("Node %d: Added transaction to current block: %+v\n", node.ID, upcomingTrx)
 
@@ -219,7 +219,7 @@ func (node *Node) mineCheck() {
 	// Mark transactions as mined globally
 	minedMu.Lock()
 	for _, trx := range blockToMine.BlockTransactions {
-		minedTransactions[trx.Data] = true
+		minedTransactions[trx.DatasetHash] = true
 	}
 	minedMu.Unlock()
 
@@ -271,14 +271,14 @@ func (node *Node) handleBlock(block Block) {
 		node.floodingBlock(block)
 		minedMu.Lock()
 		for _, trx := range block.BlockTransactions {
-			minedTransactions[trx.Data] = true
+			minedTransactions[trx.DatasetHash] = true
 		}
 		minedMu.Unlock()
 
 		//node.mu.Lock()
 		unminedTransactions := []Transaction{}
 		for _, trx := range node.CurrentBlock.BlockTransactions {
-			if !minedTransactions[trx.Data] {
+			if !minedTransactions[trx.DatasetHash] {
 				unminedTransactions = append(unminedTransactions, trx)
 			}
 		}
@@ -449,7 +449,9 @@ func main() {
 	case 2:
 		part02()
 	case 3:
-		retrieve_all_files()
+		//retrieve_all_files()
+		//all_files_hash()
+		run_algo()
 	default:
 		fmt.Println("Invalid choice. Please enter 1 or 2.")
 	}
@@ -457,25 +459,78 @@ func main() {
 
 func part01() {
 
+	clusterCenters := [][]float64{
+		{0.07996, -0.90932, -0.38071},
+		{1.34745, 0.18654, 0.90497},
+		{-1.15133, 0.83523, -0.30381},
+	}
+
+	// Example data for cluster sizes
+	clusterSizes := map[string]int{
+		"0": 67,
+		"1": 49,
+		"2": 62,
+	}
+
+	// Create an AI output object
+	aiOutput := AIOutput{
+		ClusterCenters: clusterCenters,
+		Inertia:        1285.6677396078076,
+		ClusterSizes:   clusterSizes,
+	}
+
 	transactions1 := []Transaction{
-		{Data: "ahmed yassin"},
-		{Data: "ikhwan al-muslimoon"},
-		{Data: "hayaat tahrir al sham"},
-		{Data: "hamas"},
+		{
+			DatasetHash: "sha256_hash_of_dataset1",
+			AlgoHash:    "sha256_hash_of_algorithm1",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset2",
+			AlgoHash:    "sha256_hash_of_algorithm2",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset3",
+			AlgoHash:    "sha256_hash_of_algorithm3",
+			Output:      aiOutput,
+		},
 	}
 
 	transactions2 := []Transaction{
-		{Data: "syria"},
-		{Data: "jolani"},
-		{Data: "hts"},
-		{Data: "hamas"},
+		{
+			DatasetHash: "sha256_hash_of_dataset4",
+			AlgoHash:    "sha256_hash_of_algorithm4",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset5",
+			AlgoHash:    "sha256_hash_of_algorithm5",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset6",
+			AlgoHash:    "sha256_hash_of_algorithm6",
+			Output:      aiOutput,
+		},
 	}
 
 	changedTransactions := []Transaction{
-		{Data: "khaled mashal"},
-		{Data: "muhammad deif"},
-		{Data: "yahya sinwar"},
-		{Data: "ismail haniya"},
+		{
+			DatasetHash: "sha256_hash_of_dataset1",
+			AlgoHash:    "sha256_hash_of_algorithm1",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset2",
+			AlgoHash:    "sha256_hash_of_algorithm2",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset3",
+			AlgoHash:    "sha256_hash_of_algorithm3",
+			Output:      aiOutput,
+		},
 	}
 
 	prevBlockHash := ""
@@ -608,17 +663,97 @@ func part02() {
 	genesisBlock.CurrentBlockHash = genesisBlock.blockHashCalculation()
 	blockchain.addBlock(&genesisBlock)
 
+	clusterCenters := [][]float64{
+		{0.07996, -0.90932, -0.38071},
+		{1.34745, 0.18654, 0.90497},
+		{-1.15133, 0.83523, -0.30381},
+	}
+
+	// Example data for cluster sizes
+	clusterSizes := map[string]int{
+		"0": 67,
+		"1": 49,
+		"2": 62,
+	}
+
+	// Create an AI output object
+	aiOutput := AIOutput{
+		ClusterCenters: clusterCenters,
+		Inertia:        1285.6677396078076,
+		ClusterSizes:   clusterSizes,
+	}
+
 	transactions := []Transaction{
-		{Data: "1500USD Sent"},
-		{Data: "1600USD Sent"},
-		{Data: "1700USD Sent"},
-		{Data: "1800USD Sent"},
-		{Data: "1900USD Sent"},
-		{Data: "2000USD Sent"},
-		{Data: "2100USD Sent"},
-		{Data: "2200USD Sent"},
-		{Data: "2300USD Sent"},
-		{Data: "2400USD Sent"},
+		{
+			DatasetHash: "sha256_hash_of_dataset1",
+			AlgoHash:    "sha256_hash_of_algorithm1",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset2",
+			AlgoHash:    "sha256_hash_of_algorithm2",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset3",
+			AlgoHash:    "sha256_hash_of_algorithm3",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset4",
+			AlgoHash:    "sha256_hash_of_algorithm4",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset5",
+			AlgoHash:    "sha256_hash_of_algorithm5",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset6",
+			AlgoHash:    "sha256_hash_of_algorithm6",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset7",
+			AlgoHash:    "sha256_hash_of_algorithm7",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset8",
+			AlgoHash:    "sha256_hash_of_algorithm8",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset9",
+			AlgoHash:    "sha256_hash_of_algorithm9",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset10",
+			AlgoHash:    "sha256_hash_of_algorithm10",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset11",
+			AlgoHash:    "sha256_hash_of_algorithm11",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset12",
+			AlgoHash:    "sha256_hash_of_algorithm12",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset13",
+			AlgoHash:    "sha256_hash_of_algorithm13",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset14",
+			AlgoHash:    "sha256_hash_of_algorithm14",
+			Output:      aiOutput,
+		},
 	}
 	nodes := make([]Node, 8)
 
