@@ -123,28 +123,28 @@ func (node *Node) handleTranscation(trx []Transaction) {
 
 		// Check if the transaction has already been mined
 		minedMu.Lock()
-		_, isMined := minedTransactions[upcomingTrx.Data]
+		_, isMined := minedTransactions[upcomingTrx.DatasetHash]
 		minedMu.Unlock()
 
 		// Add transaction to the current block only if it is unmined
-		if !isMined && !node.receivedTransactions[upcomingTrx.Data] {
+		if !isMined && !node.receivedTransactions[upcomingTrx.DatasetHash] {
 			// Check if the transaction is a duplicate in the CurrentBlock
 			duplicate := false
 			for _, existingTrx := range node.CurrentBlock.BlockTransactions {
-				if existingTrx.Data == upcomingTrx.Data {
+				if existingTrx.DatasetHash == upcomingTrx.DatasetHash {
 					duplicate = true
 					break
 				}
 			}
 
 			// Add the transaction if it's not a duplicate and the block isn't full
-			if !duplicate && len(node.CurrentBlock.BlockTransactions) < 5 {
-				node.receivedTransactions[upcomingTrx.Data] = true
+			if !duplicate && len(node.CurrentBlock.BlockTransactions) < 1 {
+				node.receivedTransactions[upcomingTrx.DatasetHash] = true
 				node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, upcomingTrx)
 				fmt.Printf("Node %d: Added transaction to current block: %+v\n", node.ID, upcomingTrx)
 
 				//as soon as length of block transaction is 5, we will start mining the block
-				if len(node.CurrentBlock.BlockTransactions) == 5 {
+				if len(node.CurrentBlock.BlockTransactions) == 1 {
 					// Update MerkleRoot for the block based on the first 5 transactions
 					node.CurrentBlock.MerkleRoot = merkleRoot(node.CurrentBlock.BlockTransactions).hash
 					go node.mineCheck()
@@ -201,7 +201,7 @@ func (node *Node) handleTranscation(trx []Transaction) {
 // }
 
 func (node *Node) mineCheck() {
-	if len(node.CurrentBlock.BlockTransactions) < 5 {
+	if len(node.CurrentBlock.BlockTransactions) < 1 {
 		fmt.Printf("Node %d: Not enough transactions to mine a block.\n", node.ID)
 		return
 	}
@@ -219,7 +219,7 @@ func (node *Node) mineCheck() {
 	// Mark transactions as mined globally
 	minedMu.Lock()
 	for _, trx := range blockToMine.BlockTransactions {
-		minedTransactions[trx.Data] = true
+		minedTransactions[trx.DatasetHash] = true
 	}
 	minedMu.Unlock()
 
@@ -271,14 +271,14 @@ func (node *Node) handleBlock(block Block) {
 		node.floodingBlock(block)
 		minedMu.Lock()
 		for _, trx := range block.BlockTransactions {
-			minedTransactions[trx.Data] = true
+			minedTransactions[trx.DatasetHash] = true
 		}
 		minedMu.Unlock()
 
 		//node.mu.Lock()
 		unminedTransactions := []Transaction{}
 		for _, trx := range node.CurrentBlock.BlockTransactions {
-			if !minedTransactions[trx.Data] {
+			if !minedTransactions[trx.DatasetHash] {
 				unminedTransactions = append(unminedTransactions, trx)
 			}
 		}
@@ -352,7 +352,7 @@ func (node *Node) floodingTrx(transactions []Transaction) {
 
 	// Add only the first 5 transactions to the current block
 	for _, trx := range transactions {
-		if len(node.CurrentBlock.BlockTransactions) < 5 {
+		if len(node.CurrentBlock.BlockTransactions) < 1 {
 			node.CurrentBlock.BlockTransactions = append(node.CurrentBlock.BlockTransactions, trx)
 		}
 	}
@@ -436,20 +436,19 @@ func main() {
 	var choice int
 
 	fmt.Println("Select an option:")
-	fmt.Println("1. Part #01")
-	fmt.Println("2. Part #02")
-	fmt.Println("3. Retrieve from IPFS")
-
-	fmt.Print("Enter your choice (1 or 2 or 3): ")
+	fmt.Println("1. Create Test Blockchain")
+	fmt.Println("2. Run on P2P Network by generating transactions through IPFS")
+	fmt.Print("Enter your choice (1 or 2): ")
 	fmt.Scanln(&choice)
 
 	switch choice {
 	case 1:
 		part01()
 	case 2:
-		part02()
-	case 3:
 		retrieve_all_files()
+		all_files_hash()
+		transactions := run_algo()
+		part02(transactions)
 	default:
 		fmt.Println("Invalid choice. Please enter 1 or 2.")
 	}
@@ -457,25 +456,78 @@ func main() {
 
 func part01() {
 
+	clusterCenters := [][]float64{
+		{0.07996, -0.90932, -0.38071},
+		{1.34745, 0.18654, 0.90497},
+		{-1.15133, 0.83523, -0.30381},
+	}
+
+	// Example data for cluster sizes
+	clusterSizes := map[string]int{
+		"0": 67,
+		"1": 49,
+		"2": 62,
+	}
+
+	// Create an AI output object
+	aiOutput := AIOutput{
+		ClusterCenters: clusterCenters,
+		Inertia:        1285.6677396078076,
+		ClusterSizes:   clusterSizes,
+	}
+
 	transactions1 := []Transaction{
-		{Data: "ahmed yassin"},
-		{Data: "ikhwan al-muslimoon"},
-		{Data: "hayaat tahrir al sham"},
-		{Data: "hamas"},
+		{
+			DatasetHash: "sha256_hash_of_dataset1",
+			AlgoHash:    "sha256_hash_of_algorithm1",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset2",
+			AlgoHash:    "sha256_hash_of_algorithm2",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset3",
+			AlgoHash:    "sha256_hash_of_algorithm3",
+			Output:      aiOutput,
+		},
 	}
 
 	transactions2 := []Transaction{
-		{Data: "syria"},
-		{Data: "jolani"},
-		{Data: "hts"},
-		{Data: "hamas"},
+		{
+			DatasetHash: "sha256_hash_of_dataset4",
+			AlgoHash:    "sha256_hash_of_algorithm4",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset5",
+			AlgoHash:    "sha256_hash_of_algorithm5",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset6",
+			AlgoHash:    "sha256_hash_of_algorithm6",
+			Output:      aiOutput,
+		},
 	}
 
 	changedTransactions := []Transaction{
-		{Data: "khaled mashal"},
-		{Data: "muhammad deif"},
-		{Data: "yahya sinwar"},
-		{Data: "ismail haniya"},
+		{
+			DatasetHash: "sha256_hash_of_dataset1",
+			AlgoHash:    "sha256_hash_of_algorithm1",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset2",
+			AlgoHash:    "sha256_hash_of_algorithm2",
+			Output:      aiOutput,
+		},
+		{
+			DatasetHash: "sha256_hash_of_dataset3",
+			AlgoHash:    "sha256_hash_of_algorithm3",
+			Output:      aiOutput,
+		},
 	}
 
 	prevBlockHash := ""
@@ -595,7 +647,7 @@ func part01() {
 // 	fmt.Println("All transactions generated.")
 // }
 
-func part02() {
+func part02(Transactions []Transaction) {
 
 	genesisBlock := Block{
 		PrevBlockHash:     "",
@@ -608,18 +660,6 @@ func part02() {
 	genesisBlock.CurrentBlockHash = genesisBlock.blockHashCalculation()
 	blockchain.addBlock(&genesisBlock)
 
-	transactions := []Transaction{
-		{Data: "1500USD Sent"},
-		{Data: "1600USD Sent"},
-		{Data: "1700USD Sent"},
-		{Data: "1800USD Sent"},
-		{Data: "1900USD Sent"},
-		{Data: "2000USD Sent"},
-		{Data: "2100USD Sent"},
-		{Data: "2200USD Sent"},
-		{Data: "2300USD Sent"},
-		{Data: "2400USD Sent"},
-	}
 	nodes := make([]Node, 8)
 
 	for i := range nodes {
@@ -633,7 +673,7 @@ func part02() {
 		assigningNeighbor(&nodes[i])
 		StartNode(&nodes[i])
 	}
-	nodes[4].floodingTrx(transactions)
+	nodes[4].floodingTrx(Transactions)
 
 	time.Sleep(12 * time.Second)
 	DisplayP2PNetwork(nodes)
