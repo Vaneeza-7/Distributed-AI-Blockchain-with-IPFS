@@ -24,7 +24,11 @@ func executePythonScript(filePath string, nClusters int) (string, error) {
 	return out.String(), nil
 }
 
-func run_algo() {
+func run_algo() []Transaction {
+	//array to store all transactions
+
+	transactions1 := []Transaction{}
+
 	datasets := map[string]int{
 		"iris.csv": 3,
 		"wine.csv": 3,
@@ -34,14 +38,14 @@ func run_algo() {
 	algoHash, err := calculateHash("kmeans.py", "sha256")
 	if err != nil {
 		fmt.Printf("Error calculating hash of kmeans.py: %v\n", err)
-		return
+		return nil
 	}
 
 	for filePath, nClusters := range datasets {
 		datasetHash, err := calculateHash(filePath, "sha256")
 		if err != nil {
 			fmt.Printf("Error calculating hash of %s: %v\n", filePath, err)
-			return
+			return nil
 		}
 
 		output, err := executePythonScript(filePath, nClusters)
@@ -60,6 +64,7 @@ func run_algo() {
 
 		// Create a transaction
 		transaction := createTransaction(datasetHash, algoHash, &aiOutput)
+		transactions1 = append(transactions1, *transaction)
 
 		// Serialize transaction to JSON
 		transactionJSON, err := json.MarshalIndent(transaction, "", "  ")
@@ -69,4 +74,6 @@ func run_algo() {
 
 		fmt.Printf("Transaction for %s:\n%s\n", filePath, string(transactionJSON))
 	}
+
+	return transactions1
 }
